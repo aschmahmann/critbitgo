@@ -81,6 +81,19 @@ type Trie struct {
 	size int
 }
 
+func (t *Trie) GetArbitrary() []byte {
+	nd := t.root
+	for {
+		if nd.external != nil {
+			return nd.external.key
+		} else if nd.internal.child[0].external == nil && nd.internal.child[0].internal == nil {
+			nd = nd.internal.child[0]
+		} else {
+			nd = nd.internal.child[1]
+		}
+	}
+}
+
 // searching the tree.
 func (t *Trie) search(key []byte) *node {
 	n := &t.root
@@ -167,6 +180,42 @@ func (t *Trie) insert(key []byte, value interface{}, replace bool) bool {
 // if `key` is alredy in Trie, return false.
 func (t *Trie) Insert(key []byte, value interface{}) bool {
 	return t.insert(key, value, false)
+}
+
+// insert into the tree (replaceable).
+func (t *Trie) GetClosest(key []byte) []byte {
+	// an empty tree
+	if t.size == 0 {
+		return []byte{}
+	}
+
+	n := t.search(key)
+	newOffset, _, _ := n.external.criticalBit(key)
+
+	// already exists in the tree
+	if newOffset == -1 {
+		return key
+	}
+
+	// insert new node
+	wherep := &t.root
+	for in := wherep.internal; in != nil; in = wherep.internal {
+		//if in.offset > newOffset || (in.offset == newOffset && in.bit < newBit) {
+		//	break
+		//}
+		wherep = &in.child[in.direction(key)]
+	}
+
+	if wherep.internal != nil {
+		panic(fmt.Sprintf("%v", wherep.internal))
+		//if wherep.internal.child[0].external != nil{
+		//	return wherep.internal.child[0].external.key
+		//} else if wherep.internal.child[1].external != nil {
+		//	return wherep.internal.child[1].external.key
+		//}
+	} else {
+		return wherep.external.key
+	}
 }
 
 // set into the tree.
@@ -316,6 +365,45 @@ func walk(n *node, key []byte, seek *bool, handle func([]byte, interface{}) bool
 		if !(*seek) && direction == 0 {
 			// iteration another side
 			return walk(&n.internal.child[1], key, seek, handle)
+		}
+		return true
+	} else {
+		if *seek {
+			if bytes.Equal(n.external.key, key) {
+				// seek completed
+				*seek = false
+			} else {
+				// key is not in Trie
+				return false
+			}
+		}
+		return handle(n.external.key, n.external.value)
+	}
+}
+
+// Iterating elements from a given start key.
+// handle is called with arguments key and value (if handle returns `false`, the iteration is aborted)
+func (t *Trie) RevWalk(start []byte, handle func(key []byte, value interface{}) bool) bool {
+	var seek bool
+	if start != nil {
+		seek = true
+	}
+	return revwalk(&t.root, start, &seek, handle)
+}
+
+func revwalk(n *node, key []byte, seek *bool, handle func([]byte, interface{}) bool) bool {
+	if n.internal != nil {
+		var direction int
+		direction = 1
+		if *seek {
+			direction = n.internal.direction(key)
+		}
+		if !revwalk(&n.internal.child[direction], key, seek, handle) {
+			return false
+		}
+		if !(*seek) && direction == 1 {
+			// iteration another side
+			return revwalk(&n.internal.child[0], key, seek, handle)
 		}
 		return true
 	} else {
